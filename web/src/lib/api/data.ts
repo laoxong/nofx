@@ -2,6 +2,7 @@ import type {
   SystemStatus,
   AccountInfo,
   Position,
+  OpenOrder,
   DecisionRecord,
   Statistics,
   CompetitionData,
@@ -38,6 +39,44 @@ export const dataApi = {
     const result = await httpClient.request<Position[]>(url, { silent })
     if (!result.success) throw new Error('Failed to fetch positions')
     return result.data!
+  },
+
+  async getOpenOrders(
+    traderId: string,
+    symbol: string,
+    silent?: boolean
+  ): Promise<OpenOrder[]> {
+    const params = new URLSearchParams()
+    params.append('trader_id', traderId)
+    params.append('symbol', symbol)
+
+    const result = await httpClient.request<OpenOrder[]>(
+      `${API_BASE}/open-orders?${params}`,
+      { silent }
+    )
+    if (!result.success) throw new Error('Failed to fetch open orders')
+    return Array.isArray(result.data) ? result.data : []
+  },
+
+  async getOpenOrdersForSymbols(
+    traderId: string,
+    symbols: string[],
+    silent?: boolean
+  ): Promise<OpenOrder[]> {
+    const uniqueSymbols = Array.from(new Set(symbols.filter(Boolean)))
+    if (uniqueSymbols.length === 0) return []
+
+    const results = await Promise.allSettled(
+      uniqueSymbols.map((symbol) => dataApi.getOpenOrders(traderId, symbol, silent))
+    )
+
+    const orders: OpenOrder[] = []
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        orders.push(...result.value)
+      }
+    })
+    return orders
   },
 
   async getDecisions(traderId?: string): Promise<DecisionRecord[]> {

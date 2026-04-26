@@ -468,6 +468,8 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		CandidateCoins: candidateCoins,
 	}
 
+	ctx.OpenOrders = at.collectOpenOrdersForAI(candidateCoins, positionInfos)
+
 	// 7. Add recent closed trades (if store is available)
 	if at.store != nil {
 		// Get recent 10 closed trades for AI context
@@ -580,6 +582,51 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 	return ctx, nil
 }
 
+func (at *AutoTrader) collectOpenOrdersForAI(candidateCoins []kernel.CandidateCoin, positions []kernel.PositionInfo) []kernel.OpenOrderInfo {
+	symbolSet := make(map[string]struct{})
+	for _, coin := range candidateCoins {
+		if coin.Symbol != "" {
+			symbolSet[coin.Symbol] = struct{}{}
+		}
+	}
+	for _, pos := range positions {
+		if pos.Symbol != "" {
+			symbolSet[pos.Symbol] = struct{}{}
+		}
+	}
+
+	if len(symbolSet) == 0 {
+		return nil
+	}
+
+	openOrders := make([]kernel.OpenOrderInfo, 0)
+	for symbol := range symbolSet {
+		orders, err := at.trader.GetOpenOrders(symbol)
+		if err != nil {
+			at.logWarnf("⚠️ Failed to get open orders for %s: %v", symbol, err)
+			continue
+		}
+		for _, order := range orders {
+			openOrders = append(openOrders, kernel.OpenOrderInfo{
+				OrderID:      order.OrderID,
+				Symbol:       order.Symbol,
+				Side:         order.Side,
+				PositionSide: order.PositionSide,
+				Type:         order.Type,
+				Price:        order.Price,
+				StopPrice:    order.StopPrice,
+				Quantity:     order.Quantity,
+				Status:       order.Status,
+			})
+		}
+		if len(openOrders) >= 20 {
+			break
+		}
+	}
+
+	return openOrders
+}
+
 // sortDecisionsByPriority sorts decisions: close positions first, then open positions, finally hold/wait
 // This avoids position stacking overflow when changing positions
 func sortDecisionsByPriority(decisions []kernel.Decision) []kernel.Decision {
@@ -590,12 +637,16 @@ func sortDecisionsByPriority(decisions []kernel.Decision) []kernel.Decision {
 	// Define priority
 	getActionPriority := func(action string) int {
 		switch action {
+		case "cancel_order", "cancel_all_orders":
+			return 0 // Cancel stale/conflicting pending orders before new actions
 		case "close_long", "close_short":
 			return 1 // Highest priority: close positions first
+		case "place_buy_limit", "place_sell_limit":
+			return 2 // Place pending orders before market opens if both are present
 		case "open_long", "open_short":
-			return 2 // Second priority: open positions later
+			return 3 // Market opens after pending-order maintenance
 		case "hold", "wait":
-			return 3 // Lowest priority: wait
+			return 4 // Lowest priority: wait
 		default:
 			return 999 // Unknown actions at the end
 		}

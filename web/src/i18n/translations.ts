@@ -54,6 +54,10 @@ export const translations = {
     short: 'SHORT',
     noPositions: 'No Positions',
     noActivePositions: 'No active trading positions',
+    currentOpenOrders: 'Current Open Orders',
+    pending: 'Pending',
+    noOpenOrders: 'No Open Orders',
+    noPendingOrders: 'No pending exchange orders',
 
     // Recent Decisions
     recentDecisions: 'Recent Decisions',
@@ -983,7 +987,10 @@ export const translations = {
       entry: 'Entry',
       exit: 'Exit',
       qty: 'Qty',
+      type: 'Type',
+      price: 'Price',
       value: 'Value',
+      orderId: 'Order ID',
       lev: 'Lev',
       pnl: 'P&L',
       duration: 'Duration',
@@ -1173,6 +1180,7 @@ export const translations = {
       perPage: 'Per page',
       accountFetchFailed: 'DATA_FETCH::FAILED — Account data unavailable, check connection',
       positionsFetchFailed: 'Position data unavailable',
+      openOrdersFetchFailed: 'Open order data unavailable',
       decisionsFetchFailed: 'Decision data unavailable',
     },
 
@@ -1416,6 +1424,10 @@ export const translations = {
     short: '空头',
     noPositions: '无持仓',
     noActivePositions: '当前没有活跃的交易持仓',
+    currentOpenOrders: '当前挂单',
+    pending: '挂单',
+    noOpenOrders: '无挂单',
+    noPendingOrders: '当前没有未成交挂单',
 
     // Recent Decisions
     recentDecisions: '最近决策',
@@ -2470,7 +2482,10 @@ export const translations = {
       entry: '入场价',
       mark: '标记价',
       qty: '数量',
+      type: '类型',
+      price: '价格',
       value: '价值',
+      orderId: '订单ID',
       lev: '杠杆',
       uPnL: '未实现盈亏',
       liq: '强平价',
@@ -2480,6 +2495,7 @@ export const translations = {
       perPage: '每页',
       accountFetchFailed: 'DATA_FETCH::FAILED — 账户数据请求失败，请检查连接',
       positionsFetchFailed: '持仓数据请求失败',
+      openOrdersFetchFailed: '挂单数据请求失败',
       decisionsFetchFailed: '决策记录请求失败',
     },
 
@@ -2718,6 +2734,10 @@ export const translations = {
     short: 'SHORT',
     noPositions: 'Tidak Ada Posisi',
     noActivePositions: 'Tidak ada posisi trading yang aktif',
+    currentOpenOrders: 'Order Terbuka Saat Ini',
+    pending: 'Pending',
+    noOpenOrders: 'Tidak Ada Order Terbuka',
+    noPendingOrders: 'Tidak ada order exchange yang tertunda',
 
     // Recent Decisions
     recentDecisions: 'Keputusan Terbaru',
@@ -3580,7 +3600,10 @@ export const translations = {
       entry: 'Entry',
       mark: 'Mark',
       qty: 'Qty',
+      type: 'Tipe',
+      price: 'Harga',
       value: 'Nilai',
+      orderId: 'ID Order',
       lev: 'Lev.',
       uPnL: 'uPnL',
       liq: 'Liq.',
@@ -3590,6 +3613,7 @@ export const translations = {
       perPage: 'Per halaman',
       accountFetchFailed: 'DATA_FETCH::FAILED — Data akun tidak tersedia, periksa koneksi',
       positionsFetchFailed: 'Data posisi tidak tersedia',
+      openOrdersFetchFailed: 'Data order terbuka tidak tersedia',
       decisionsFetchFailed: 'Data keputusan tidak tersedia',
     },
 

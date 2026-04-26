@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"nofx/logger"
 	"nofx/market"
 	"nofx/provider/hyperliquid"
 	"nofx/provider/nofxos"
 	"nofx/security"
 	"nofx/store"
+	"os"
 	"strings"
 	"time"
 )
@@ -99,6 +99,7 @@ type Context struct {
 	PromptVariant      string                             `json:"prompt_variant,omitempty"`
 	TradingStats       *TradingStats                      `json:"trading_stats,omitempty"`
 	RecentOrders       []RecentOrder                      `json:"recent_orders,omitempty"`
+	OpenOrders         []OpenOrderInfo                    `json:"open_orders,omitempty"`
 	MarketDataMap      map[string]*market.Data            `json:"-"`
 	MultiTFMarket      map[string]map[string]*market.Data `json:"-"`
 	OITopDataMap       map[string]*OITopData              `json:"-"`
@@ -109,6 +110,19 @@ type Context struct {
 	BTCETHLeverage     int                                `json:"-"`
 	AltcoinLeverage    int                                `json:"-"`
 	Timeframes         []string                           `json:"-"`
+}
+
+// OpenOrderInfo describes an existing pending exchange order for AI context.
+type OpenOrderInfo struct {
+	OrderID      string  `json:"order_id"`
+	Symbol       string  `json:"symbol"`
+	Side         string  `json:"side"`
+	PositionSide string  `json:"position_side,omitempty"`
+	Type         string  `json:"type"`
+	Price        float64 `json:"price,omitempty"`
+	StopPrice    float64 `json:"stop_price,omitempty"`
+	Quantity     float64 `json:"quantity"`
+	Status       string  `json:"status"`
 }
 
 // Decision AI trading decision

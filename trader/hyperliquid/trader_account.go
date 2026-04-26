@@ -526,6 +526,8 @@ func (t *HyperliquidTrader) GetTrades(startTime time.Time, limit int) ([]types.T
 
 // GetOpenOrders gets all open/pending orders for a symbol
 func (t *HyperliquidTrader) GetOpenOrders(symbol string) ([]types.OpenOrder, error) {
+	coin := convertSymbolToHyperliquid(symbol)
+
 	openOrders, err := t.exchange.Info().OpenOrders(t.ctx, t.walletAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get open orders: %w", err)
@@ -533,7 +535,7 @@ func (t *HyperliquidTrader) GetOpenOrders(symbol string) ([]types.OpenOrder, err
 
 	var result []types.OpenOrder
 	for _, order := range openOrders {
-		if order.Coin != symbol {
+		if order.Coin != coin {
 			continue
 		}
 
@@ -544,7 +546,7 @@ func (t *HyperliquidTrader) GetOpenOrders(symbol string) ([]types.OpenOrder, err
 
 		result = append(result, types.OpenOrder{
 			OrderID:      fmt.Sprintf("%d", order.Oid),
-			Symbol:       order.Coin,
+			Symbol:       symbol,
 			Side:         side,
 			PositionSide: "",
 			Type:         "LIMIT",

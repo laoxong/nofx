@@ -995,10 +995,23 @@ func (t *HyperliquidTrader) SetTakeProfit(symbol string, positionSide string, qu
 // PlaceLimitOrder places a limit order for grid trading
 // Implements GridTrader interface
 func (t *HyperliquidTrader) PlaceLimitOrder(req *types.LimitOrderRequest) (*types.LimitOrderResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("limit order request is nil")
+	}
+	if req.Price <= 0 {
+		return nil, fmt.Errorf("limit order price must be greater than 0")
+	}
+	if req.Quantity <= 0 {
+		return nil, fmt.Errorf("limit order quantity must be greater than 0")
+	}
+
 	coin := convertSymbolToHyperliquid(req.Symbol)
 
 	// Set leverage if specified and not xyz dex
 	isXyz := strings.HasPrefix(coin, "xyz:")
+	if isXyz {
+		return nil, fmt.Errorf("hyperliquid xyz dex limit orders are not supported yet")
+	}
 	if req.Leverage > 0 && !isXyz {
 		if err := t.SetLeverage(req.Symbol, req.Leverage); err != nil {
 			logger.Warnf("[Hyperliquid] Failed to set leverage: %v", err)
@@ -1013,6 +1026,10 @@ func (t *HyperliquidTrader) PlaceLimitOrder(req *types.LimitOrderRequest) (*type
 
 	// Determine if buy or sell
 	isBuy := req.Side == "BUY"
+	tif := hyperliquid.TifGtc
+	if req.PostOnly {
+		tif = hyperliquid.TifAlo
+	}
 
 	logger.Infof("[Hyperliquid] PlaceLimitOrder: %s %s @ %.4f, qty=%.4f", coin, req.Side, roundedPrice, roundedQuantity)
 
@@ -1023,21 +1040,21 @@ func (t *HyperliquidTrader) PlaceLimitOrder(req *types.LimitOrderRequest) (*type
 		Price: roundedPrice,
 		OrderType: hyperliquid.OrderType{
 			Limit: &hyperliquid.LimitOrderType{
-				Tif: hyperliquid.TifGtc, // Good Till Cancel for grid orders
+				Tif: tif,
 			},
 		},
 		ReduceOnly: req.ReduceOnly,
 	}
 
-	_, err := t.exchange.Order(t.ctx, order, defaultBuilder)
+	status, err := t.exchange.Order(t.ctx, order, defaultBuilder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to place limit order: %w", err)
 	}
 
-	// Note: Hyperliquid's Order response doesn't return the order ID directly
-	// We would need to query open orders to get it, but for grid trading
-	// we can track orders by price level instead
-	orderID := fmt.Sprintf("%d", time.Now().UnixNano())
+	orderID, statusText, err := parseHyperliquidOrderStatus(status)
+	if err != nil {
+		return nil, err
+	}
 
 	logger.Infof("✓ [Hyperliquid] Limit order placed: %s %s @ %.4f",
 		coin, req.Side, roundedPrice)
@@ -1050,8 +1067,21 @@ func (t *HyperliquidTrader) PlaceLimitOrder(req *types.LimitOrderRequest) (*type
 		PositionSide: req.PositionSide,
 		Price:        roundedPrice,
 		Quantity:     roundedQuantity,
-		Status:       "NEW",
+		Status:       statusText,
 	}, nil
+}
+
+func parseHyperliquidOrderStatus(status hyperliquid.OrderStatus) (orderID string, statusText string, err error) {
+	if status.Resting != nil {
+		return fmt.Sprintf("%d", status.Resting.Oid), "NEW", nil
+	}
+	if status.Filled != nil {
+		return fmt.Sprintf("%d", status.Filled.Oid), "FILLED", nil
+	}
+	if status.Error != nil {
+		return "", "", fmt.Errorf("hyperliquid order rejected: %s", *status.Error)
+	}
+	return "", "", fmt.Errorf("hyperliquid order response did not include order status")
 }
 
 // CancelOrder cancels a specific order by ID

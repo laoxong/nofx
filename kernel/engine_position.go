@@ -20,12 +20,16 @@ func validateDecisions(decisions []Decision, accountEquity float64, btcEthLevera
 
 func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64) error {
 	validActions := map[string]bool{
-		"open_long":   true,
-		"open_short":  true,
-		"close_long":  true,
-		"close_short": true,
-		"hold":        true,
-		"wait":        true,
+		"open_long":         true,
+		"open_short":        true,
+		"close_long":        true,
+		"close_short":       true,
+		"place_buy_limit":   true,
+		"place_sell_limit":  true,
+		"cancel_order":      true,
+		"cancel_all_orders": true,
+		"hold":              true,
+		"wait":              true,
 	}
 
 	if !validActions[d.Action] {
@@ -115,6 +119,34 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 			return fmt.Errorf("risk/reward ratio too low (%.2f:1), must be ≥3.0:1 [risk: %.2f%% reward: %.2f%%] [stop loss: %.2f take profit: %.2f]",
 				riskRewardRatio, riskPercent, rewardPercent, d.StopLoss, d.TakeProfit)
 		}
+	}
+
+	if d.Action == "place_buy_limit" || d.Action == "place_sell_limit" {
+		if d.Symbol == "" {
+			return fmt.Errorf("symbol is required for limit orders")
+		}
+		if d.Price <= 0 {
+			return fmt.Errorf("limit order price must be greater than 0")
+		}
+		if d.Quantity <= 0 && d.PositionSizeUSD <= 0 {
+			return fmt.Errorf("limit order requires quantity or position_size_usd")
+		}
+		if d.Leverage < 0 {
+			return fmt.Errorf("leverage cannot be negative")
+		}
+	}
+
+	if d.Action == "cancel_order" {
+		if d.Symbol == "" {
+			return fmt.Errorf("symbol is required for cancel_order")
+		}
+		if d.OrderID == "" {
+			return fmt.Errorf("order_id is required for cancel_order")
+		}
+	}
+
+	if d.Action == "cancel_all_orders" && d.Symbol == "" {
+		return fmt.Errorf("symbol is required for cancel_all_orders")
 	}
 
 	return nil

@@ -132,13 +132,17 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	examplePositionSize := accountEquity * btcEthPosValueRatio
 	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
 		riskControl.BTCETHMaxLeverage, examplePositionSize))
+	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"place_buy_limit\", \"price\": 3200, \"position_size_usd\": 500, \"leverage\": 3, \"confidence\": 75, \"reasoning\": \"Buy only on pullback; avoid chasing\"},\n")
+	sb.WriteString("  {\"symbol\": \"SOLUSDT\", \"action\": \"cancel_order\", \"order_id\": \"123456789\"},\n")
 	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\"}\n")
 	sb.WriteString("]\n```\n")
 	sb.WriteString("</decision>\n\n")
 	sb.WriteString("## Field Description\n\n")
-	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | hold | wait\n")
+	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | place_buy_limit | place_sell_limit | cancel_order | cancel_all_orders | hold | wait\n")
 	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
 	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
+	sb.WriteString("- Required when placing limit orders: symbol, action, price, and either quantity or position_size_usd. Use `place_buy_limit` for a bid below current price and `place_sell_limit` for an ask above current price.\n")
+	sb.WriteString("- Existing open orders are shown in the user prompt. Do not place duplicate orders at similar prices; use `cancel_order` with `order_id` or `cancel_all_orders` before replacing stale/conflicting orders.\n")
 	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
 
 	// 8. Custom Prompt
@@ -263,6 +267,21 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 				order.EntryTime, order.ExitTime, order.HoldDuration))
 		}
 		sb.WriteString("\n")
+	}
+
+	if len(ctx.OpenOrders) > 0 {
+		sb.WriteString("## Existing Open Orders\n")
+		for i, order := range ctx.OpenOrders {
+			price := order.Price
+			if price <= 0 {
+				price = order.StopPrice
+			}
+			sb.WriteString(fmt.Sprintf("%d. id=%s %s %s %s qty=%.6f price=%.4f status=%s\n",
+				i+1, order.OrderID, order.Symbol, order.Side, order.Type, order.Quantity, price, order.Status))
+		}
+		sb.WriteString("Before placing a new limit order, check these orders and cancel stale/conflicting duplicates when needed.\n\n")
+	} else {
+		sb.WriteString("Existing Open Orders: None\n\n")
 	}
 
 	// Historical trading statistics (helps AI understand past performance)

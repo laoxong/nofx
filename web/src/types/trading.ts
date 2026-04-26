@@ -42,6 +42,18 @@ export interface Position {
   margin_used: number
 }
 
+export interface OpenOrder {
+  order_id: string
+  symbol: string
+  side: string
+  position_side?: string
+  type: string
+  price: number
+  stop_price: number
+  quantity: number
+  status: string
+}
+
 export interface DecisionAction {
   action: string
   symbol: string

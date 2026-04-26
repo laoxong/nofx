@@ -2,10 +2,12 @@ package trader
 
 import (
 	"fmt"
+	"math"
 	"nofx/kernel"
 	"nofx/logger"
 	"nofx/market"
 	"nofx/store"
+	"strconv"
 	"time"
 )
 
@@ -20,12 +22,149 @@ func (at *AutoTrader) executeDecisionWithRecord(decision *kernel.Decision, actio
 		return at.executeCloseLongWithRecord(decision, actionRecord)
 	case "close_short":
 		return at.executeCloseShortWithRecord(decision, actionRecord)
+	case "place_buy_limit":
+		return at.executeLimitOrderWithRecord(decision, actionRecord, "BUY")
+	case "place_sell_limit":
+		return at.executeLimitOrderWithRecord(decision, actionRecord, "SELL")
+	case "cancel_order":
+		return at.executeCancelOrderWithRecord(decision, actionRecord)
+	case "cancel_all_orders":
+		return at.executeCancelAllOrdersWithRecord(decision, actionRecord)
 	case "hold", "wait":
 		// No execution needed, just record
 		return nil
 	default:
 		return fmt.Errorf("unknown action: %s", decision.Action)
 	}
+}
+
+func (at *AutoTrader) executeLimitOrderWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction, side string) error {
+	if decision.Price <= 0 {
+		return fmt.Errorf("limit order price must be greater than 0")
+	}
+
+	quantity := decision.Quantity
+	if quantity <= 0 && decision.PositionSizeUSD > 0 {
+		quantity = decision.PositionSizeUSD / decision.Price
+	}
+	if quantity <= 0 {
+		return fmt.Errorf("limit order quantity must be greater than 0")
+	}
+
+	gridTrader, ok := at.trader.(GridTrader)
+	if !ok {
+		gridTrader = NewGridTraderAdapter(at.trader)
+	}
+
+	if duplicated, existingOrderID, err := at.hasSimilarOpenOrder(decision.Symbol, side, decision.Price); err != nil {
+		logger.Warnf("  ⚠️ Failed to check existing open orders: %v", err)
+	} else if duplicated {
+		actionRecord.OrderID = parseOrderIDInt64(existingOrderID)
+		actionRecord.Quantity = quantity
+		actionRecord.Price = decision.Price
+		logger.Infof("  ℹ️ Similar %s limit order already exists for %s at %.4f (orderID=%s), skipping duplicate",
+			side, decision.Symbol, decision.Price, existingOrderID)
+		return nil
+	}
+
+	leverage := decision.Leverage
+	if leverage <= 0 {
+		leverage = at.defaultLeverageForSymbol(decision.Symbol)
+	}
+
+	if err := at.trader.SetMarginMode(decision.Symbol, at.config.IsCrossMargin); err != nil {
+		logger.Infof("  ⚠️ Failed to set margin mode: %v", err)
+	}
+
+	req := &LimitOrderRequest{
+		Symbol:     decision.Symbol,
+		Side:       side,
+		Price:      decision.Price,
+		Quantity:   quantity,
+		Leverage:   leverage,
+		PostOnly:   true,
+		ReduceOnly: false,
+		ClientID:   fmt.Sprintf("ai-limit-%d", time.Now().UnixNano()%1000000000),
+	}
+
+	result, err := gridTrader.PlaceLimitOrder(req)
+	if err != nil {
+		return err
+	}
+
+	actionRecord.OrderID = parseOrderIDInt64(result.OrderID)
+	actionRecord.Quantity = result.Quantity
+	actionRecord.Price = result.Price
+	actionRecord.Leverage = leverage
+
+	logger.Infof("  ✓ Limit order placed: %s %s %.6f @ %.4f orderID=%s",
+		decision.Symbol, side, result.Quantity, result.Price, result.OrderID)
+	return nil
+}
+
+func (at *AutoTrader) executeCancelOrderWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
+	gridTrader, ok := at.trader.(GridTrader)
+	if !ok {
+		gridTrader = NewGridTraderAdapter(at.trader)
+	}
+
+	if err := gridTrader.CancelOrder(decision.Symbol, decision.OrderID); err != nil {
+		return err
+	}
+
+	actionRecord.OrderID = parseOrderIDInt64(decision.OrderID)
+	logger.Infof("  ✓ Cancelled order: %s %s", decision.Symbol, decision.OrderID)
+	return nil
+}
+
+func (at *AutoTrader) executeCancelAllOrdersWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
+	if err := at.trader.CancelAllOrders(decision.Symbol); err != nil {
+		return err
+	}
+
+	logger.Infof("  ✓ Cancelled all open orders for %s", decision.Symbol)
+	return nil
+}
+
+func (at *AutoTrader) hasSimilarOpenOrder(symbol, side string, price float64) (bool, string, error) {
+	orders, err := at.trader.GetOpenOrders(symbol)
+	if err != nil {
+		return false, "", err
+	}
+
+	tolerance := price * 0.001
+	if tolerance < 0.01 {
+		tolerance = 0.01
+	}
+	for _, order := range orders {
+		if order.Side == side && math.Abs(order.Price-price) <= tolerance {
+			return true, order.OrderID, nil
+		}
+	}
+
+	return false, "", nil
+}
+
+func (at *AutoTrader) defaultLeverageForSymbol(symbol string) int {
+	if at.config.StrategyConfig == nil {
+		return 3
+	}
+	risk := at.config.StrategyConfig.RiskControl
+	if symbol == "BTCUSDT" || symbol == "ETHUSDT" {
+		if risk.BTCETHMaxLeverage > 0 {
+			return risk.BTCETHMaxLeverage
+		}
+		return 3
+	}
+	if risk.AltcoinMaxLeverage > 0 {
+		return risk.AltcoinMaxLeverage
+	}
+	return 3
+}
+
+func parseOrderIDInt64(orderID string) int64 {
+	id, _ := strconv.ParseInt(orderID, 10, 64)
+	return id
 }
 
 // executeOpenLongWithRecord executes open long position and records detailed information

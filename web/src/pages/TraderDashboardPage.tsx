@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { mutate } from 'swr'
+import useSWR from 'swr'
 import { api } from '../lib/api'
 import { ChartTabs } from '../components/charts/ChartTabs'
 import { DecisionCard } from '../components/trader/DecisionCard'
@@ -16,6 +17,7 @@ import type {
     SystemStatus,
     AccountInfo,
     Position,
+    OpenOrder,
     DecisionRecord,
     Statistics,
     TraderInfo,
@@ -142,6 +144,41 @@ export function TraderDashboardPage({
     const chartSectionRef = useRef<HTMLDivElement>(null)
     const [showWalletAddress, setShowWalletAddress] = useState<boolean>(false)
     const [copiedAddress, setCopiedAddress] = useState<boolean>(false)
+
+    const openOrderSymbols = useMemo(() => {
+        const symbols = new Set<string>()
+        positions?.forEach((pos) => {
+            if (pos.symbol) symbols.add(pos.symbol)
+        })
+        decisions?.forEach((record) => {
+            record.decisions?.forEach((decision) => {
+                if (decision.symbol) symbols.add(decision.symbol)
+            })
+        })
+        if (status?.grid_symbol) symbols.add(status.grid_symbol)
+        if (selectedChartSymbol) symbols.add(selectedChartSymbol)
+        return Array.from(symbols)
+    }, [decisions, positions, selectedChartSymbol, status?.grid_symbol])
+    const openOrderSymbolsKey = useMemo(
+        () => [...openOrderSymbols].sort().join(','),
+        [openOrderSymbols]
+    )
+
+    const {
+        data: openOrders,
+        error: openOrdersError,
+        isLoading: openOrdersLoading,
+    } = useSWR<OpenOrder[]>(
+        selectedTraderId && openOrderSymbols.length > 0
+            ? `open-orders-${selectedTraderId}-${openOrderSymbolsKey}`
+            : null,
+        () => api.getOpenOrdersForSymbols(selectedTraderId!, openOrderSymbols, true),
+        {
+            refreshInterval: 15000,
+            revalidateOnFocus: false,
+            dedupingInterval: 10000,
+        }
+    )
 
     // Current positions pagination
     const [positionsPageSize, setPositionsPageSize] = useState<number>(20)
@@ -737,6 +774,109 @@ export function TraderDashboardPage({
                                     <div className="text-6xl mb-4 opacity-50 grayscale">📊</div>
                                     <div className="text-lg font-semibold mb-2">{t('noPositions', language)}</div>
                                     <div className="text-sm">{t('noActivePositions', language)}</div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Current Open Orders */}
+                        <div
+                            className="nofx-glass p-6 animate-slide-in relative overflow-hidden group"
+                            style={{ animationDelay: '0.18s' }}
+                        >
+                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <div className="w-24 h-24 rounded-full bg-nofx-gold blur-3xl" />
+                            </div>
+                            <div className="flex items-center justify-between mb-5 relative z-10">
+                                <h2 className="text-lg font-bold flex items-center gap-2 text-nofx-text-main uppercase tracking-wide">
+                                    <span className="text-nofx-gold">◇</span> {t('currentOpenOrders', language)}
+                                </h2>
+                                {openOrders && openOrders.length > 0 && (
+                                    <div className="text-xs px-2 py-1 rounded bg-nofx-gold/10 text-nofx-gold border border-nofx-gold/20 font-mono">
+                                        {openOrders.length} {t('pending', language)}
+                                    </div>
+                                )}
+                            </div>
+
+                            {openOrders && openOrders.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="text-left border-b border-white/5">
+                                            <tr>
+                                                <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-left">{t('symbol', language)}</th>
+                                                <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('side', language)}</th>
+                                                <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-center">{t('traderDashboard.type', language)}</th>
+                                                <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right">{t('traderDashboard.price', language)}</th>
+                                                <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right">{t('traderDashboard.qty', language)}</th>
+                                                <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-right hidden md:table-cell">{t('traderDashboard.value', language)}</th>
+                                                <th className="px-1 pb-3 font-semibold text-nofx-text-muted whitespace-nowrap text-left hidden md:table-cell">{t('traderDashboard.orderId', language)}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {openOrders.map((order) => {
+                                                const orderPrice = order.price > 0 ? order.price : order.stop_price
+                                                const isBuy = order.side?.toUpperCase() === 'BUY'
+                                                return (
+                                                    <tr
+                                                        key={`${order.symbol}-${order.order_id}`}
+                                                        className="border-b border-white/5 last:border-0 transition-all hover:bg-white/5 cursor-pointer"
+                                                        onClick={() => {
+                                                            setSelectedChartSymbol(order.symbol)
+                                                            setChartUpdateKey(Date.now())
+                                                            chartSectionRef.current?.scrollIntoView({
+                                                                behavior: 'smooth',
+                                                                block: 'start',
+                                                            })
+                                                        }}
+                                                    >
+                                                        <td className="px-1 py-3 font-mono font-semibold whitespace-nowrap text-left text-nofx-text-main">
+                                                            {order.symbol}
+                                                        </td>
+                                                        <td className="px-1 py-3 whitespace-nowrap text-center">
+                                                            <span
+                                                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isBuy ? 'bg-nofx-green/10 text-nofx-green' : 'bg-nofx-red/10 text-nofx-red'}`}
+                                                            >
+                                                                {isBuy ? 'BUY' : 'SELL'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-1 py-3 whitespace-nowrap text-center">
+                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-nofx-gold bg-nofx-gold/10 border border-nofx-gold/10">
+                                                                {order.type || '--'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main">
+                                                            {orderPrice > 0 ? formatPrice(orderPrice) : '--'}
+                                                        </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main">
+                                                            {formatQuantity(order.quantity)}
+                                                        </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-nofx-text-main hidden md:table-cell">
+                                                            {orderPrice > 0 ? (orderPrice * order.quantity).toFixed(2) : '--'}
+                                                        </td>
+                                                        <td className="px-1 py-3 font-mono whitespace-nowrap text-left text-nofx-text-muted hidden md:table-cell">
+                                                            {order.order_id}
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : openOrdersError ? (
+                                <div className="text-center py-12 text-nofx-text-muted opacity-60">
+                                    <div className="text-4xl mb-4">⚠️</div>
+                                    <div className="text-lg font-semibold mb-2">{t('traderDashboard.openOrdersFetchFailed', language)}</div>
+                                </div>
+                            ) : openOrdersLoading ? (
+                                <div className="py-12 space-y-3">
+                                    {[0, 1, 2].map((i) => (
+                                        <div key={i} className="h-8 rounded bg-white/5 animate-pulse" />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-12 text-nofx-text-muted opacity-60">
+                                    <div className="text-5xl mb-4 opacity-40 grayscale">⌁</div>
+                                    <div className="text-lg font-semibold mb-2">{t('noOpenOrders', language)}</div>
+                                    <div className="text-sm">{t('noPendingOrders', language)}</div>
                                 </div>
                             )}
                         </div>
